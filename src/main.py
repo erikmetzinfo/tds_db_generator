@@ -65,8 +65,28 @@ def get_general_data_of_pdf(filepath):
 
     return info
 
-# Analyze Html
+def get_general_data_of_pdf(filepath):
+    with open(filepath,'rb') as f:
+        pdf = pypdf.PdfFileReader(f)
+        info = pdf.getDocumentInfo()
+        number_of_pages = pdf.getNumPages()
 
+
+        for page in pdf.pages:
+            text = page.extractText()
+            a = text.split('\n')
+            b = 1
+
+    author = info.author
+    creator = info.creator
+    producer = info.producer
+    subject = info.subject
+    title = info.title
+
+    return info
+
+
+# Analyze Html
 EXCLUDE_HEADERS = {'',' ','\n'}
 
 def is_nextPage(page_found, page):
