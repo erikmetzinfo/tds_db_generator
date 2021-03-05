@@ -3,6 +3,10 @@ from os.path import isfile, join, abspath, dirname
 import sys
 
 import PyPDF2 as pypdf
+from io import StringIO
+from pdfminer.high_level import extract_text_to_fp
+from pdfminer.layout import LAParams
+from typing import BinaryIO
 #import pdftotree
 #from pdfminer import pypdf2xml
 
@@ -43,7 +47,7 @@ def get_raw_acroforms_pdf_data(filepath):
 
     return acroforms
 
-def get_html(filepath):
+def get_html2(filepath):
     if sys.version_info > (3, 0):
         from io import StringIO
     else:
@@ -54,6 +58,23 @@ def get_html(filepath):
     with open(filepath, 'rb') as f:
         a = extract_text_to_fp(f, output_string, laparams=LAParams(),output_type='html', codec=None)
         b = 2
+def extract_text_from_pdf(pdf_fo: BinaryIO) -> str:
+    """
+    Extracts text from a PDF
+
+    :param pdf_fo: a byte file object representing a PDF file
+    :return: extracted text
+    :raises pdfminer.pdftypes.PDFException: on invalid PDF
+    """
+    out_fo = StringIO()
+    extract_text_to_fp(pdf_fo, out_fo, laparams=LAParams(), output_type='html', codec=None)
+    return out_fo.getvalue()
+def get_html(filepath):
+    with open(filepath, 'rb') as f:
+        html_code = extract_text_from_pdf(f)
+        html_filename = filepath.replace('.pdf','.html').replace('tds_pdf','tds_html')
+        with open(html_filename, 'w+') as h:
+            h.write(html_code)
 
         
 def get_general_data_of_pdf(filepath):
