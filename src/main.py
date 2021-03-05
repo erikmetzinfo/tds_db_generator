@@ -141,6 +141,7 @@ def main():
         html_filename = save_file_as_html(tds_path + filename)
         # xml_filename = save_file_as_xml(tds_path + filename)
         headers, header_dict = get_dict_from_html(html_filename)
+        a = 1
 
 if __name__ == '__main__':
     main()
