@@ -35,15 +35,21 @@ def save_file_as_html(filepath):
       
 def save_file_as_xml(filepath):
     return __save_file_as_(filepath,'xml')
+      
+def get_file_as_text(filepath):
+    return __save_file_as_(filepath,'text',save=False)
 
-def __save_file_as_(filepath,output_type):
+def __save_file_as_(filepath,output_type,save=True):
     extracted_filename = filepath.replace('.pdf',f'.{output_type}').replace('tds_pdf',f'tds_{output_type}')
     with open(filepath, 'rb') as f:
         extracted_code = extract_text_from_pdf(f,output_type)
-        with open(extracted_filename, 'w+') as h:
-            h.write(extracted_code)
-
-    return extracted_filename
+        if save:
+            with open(extracted_filename, 'w+') as h:
+                h.write(extracted_code)
+    if save:
+        return extracted_filename
+    else:
+        return extracted_code
       
 def get_general_data_of_pdf(filepath):
     with open(filepath,'rb') as f:
@@ -85,9 +91,17 @@ def get_general_data_of_pdf(filepath):
 
     return info
 
-
+def get_text_from_pdf(filepath):
+    pdf_text_list = list()
+    with open(filepath,'rb') as f:
+        pdf = pypdf.PdfFileReader(f)
+        for page in pdf.pages:
+            text = page.extractText()
+            pdf_text_list += text.split('\n')
+    
+    return pdf_text_list
 # Analyze Html
-EXCLUDE_HEADERS = {'',' ','\n'}
+EXCLUDE_CHARACTERS = {'',' ','\n'}
 
 def is_nextPage(page_found, page):
     if page_found:
@@ -104,7 +118,7 @@ def get_headers(div_container, headers, header_dict, page, page_found):
     for span_header in span_headers:
         header = span_header.text
         header = header.replace('\n','').strip()
-        if header not in EXCLUDE_HEADERS:
+        if header not in EXCLUDE_CHARACTERS:
             headers.add(header)
             headers_per_page.add(header)
             page_found = True
@@ -124,7 +138,7 @@ def get_values(div_container):
     for span_parameter in span_parameters:
         parameter = span_parameter.text
         parameter = parameter.replace('\n','').strip()
-        if parameter not in EXCLUDE_HEADERS:
+        if parameter not in EXCLUDE_CHARACTERS:
             a = 1
 
 def get_headers_from_soup(soup):
@@ -154,6 +168,47 @@ def get_dict_from_html(filename):
 
     return headers, header_dict
 
+def delete_no_info_rows(rows):
+    index = 0
+    for i in range(len(rows)):
+        value = rows[index].strip()
+        if value in EXCLUDE_CHARACTERS:
+            rows.pop(index)
+        else:
+            rows[index] = value
+            index += 1
+
+    return rows
+
+def get_header_rows(rows, headers):
+    header_rows = dict()
+    for index, row in enumerate(rows):
+        #if row in headers:
+        if any(map(row.__contains__, headers)):
+            header_rows[index] = row
+
+    return header_rows
+
+def get_result_dict(header_rows, rows, headers):
+    result_dict = dict()
+    for index, key in enumerate(header_rows.keys()):
+        header = header_rows[key]
+        header_row = key
+
+        if index == len(header_rows.keys()) - 1:
+            #break
+            next_header_row = len(header_rows.keys())
+        else:
+            next_header_row = list(header_rows.keys())[index + 1]
+        for row in range(header_row + 1, next_header_row):
+            value = rows[row]
+            if header not in result_dict.keys():
+                result_dict[header] = list()
+            result_dict[header].append(value)
+
+    return result_dict
+
+
 def main():
     filenames, tds_path = get_files_as_array(datatype=".pdf")
     for filename in filenames:
@@ -161,6 +216,18 @@ def main():
         html_filename = save_file_as_html(tds_path + filename)
         # xml_filename = save_file_as_xml(tds_path + filename)
         headers, header_dict = get_dict_from_html(html_filename)
+
+        # method 1
+        extracted_code = get_file_as_text(tds_path + filename)
+        rows1 = delete_no_info_rows(extracted_code.split('\n'))
+        header_rows1 = get_header_rows(rows1, headers)
+        result_dict1 = get_result_dict(header_rows1, rows1, headers)
+
+        # method 2
+        rows2 = get_text_from_pdf(tds_path + filename)
+        rows2 = delete_no_info_rows(rows2)
+        header_rows2 = get_header_rows(rows2, headers)
+        result_dict2 = get_result_dict(header_rows2, rows2, headers)
         a = 1
 
 if __name__ == '__main__':
