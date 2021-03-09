@@ -91,7 +91,8 @@ class Pdf_reader(object):
         else:
             return ''
 
-    def extract_text_from_pdf(pdf_fo: BinaryIO) -> str:
+    @staticmethod
+    def extract_html_from_pdf_with_pdf_miner(pdf_fo: BinaryIO) -> str:
         """
         Extracts text from a PDF
 
@@ -99,6 +100,8 @@ class Pdf_reader(object):
         :return: extracted text
         :raises pdfminer.pdftypes.PDFException: on invalid PDF
         """
+        from pdfminer.high_level import extraextract_text_to_fpct_pages
+        from pdfminer.layout import LAParams
         out_fo = StringIO()
         extract_text_to_fp(pdf_fo, out_fo, laparams=LAParams(), output_type='html', codec=None)
         return out_fo.getvalue()
@@ -135,8 +138,8 @@ class Pdf_reader(object):
         #                         print(character.size)
         pages_set = set()
         page_text = ''
-        from pdfminer.high_level import extract_pages, extract_text_to_fp
-        from pdfminer.layout import LTTextContainer, LTChar, LTTextLineHorizontal, LTTextLine, LAParams
+        from pdfminer.high_level import extract_pages
+        from pdfminer.layout import LTTextContainer, LTChar, LTTextLineHorizontal, LTTextLine
         for page_layout in extract_pages(filepath):
             for element in page_layout:
                 if isinstance(element, LTTextContainer):
