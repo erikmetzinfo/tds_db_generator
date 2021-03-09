@@ -14,8 +14,9 @@ def get_files_as_array(datatype: str='pdf') -> list:
     return [f for f in os.listdir(TDS_PATH) if f.endswith(datatype) if os.path.isfile(os.path.join(TDS_PATH, f))], TDS_PATH
 
 class Analyze_Headers(object):
-    def __init__(self):
+    def __init__(self, pdf_reader):
         self.__BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+        self.__pdf_reader = pdf_reader
 
     @staticmethod
     def __get_headers(div_container, headers, header_dict, page, page_found):
@@ -60,7 +61,8 @@ class Analyze_Headers(object):
         headers = set()
         header_dict = dict()
         with open(filename, 'rb') as f:
-            soup = BeautifulSoup(f,'html.parser')
+            html_text = self.__pdf_reader.extract_html_from_pdf_with_pdf_miner(f)
+            soup = BeautifulSoup(html_text,'html.parser')
             headers, header_dict = self.__get_headers_from_soup(soup)
 
         return headers, header_dict
@@ -117,7 +119,7 @@ def main():
         html_set1 = pdf_reader.get_text_from_pdf(tds_path, filename, method=2, output_type='html')
         html_set2 = pdf_reader.get_text_from_pdf(tds_path, filename, method=1, output_type='html')
         html_set3 = pdf_reader.get_text_from_pdf(tds_path, filename, method=3, output_type='html')
-        headers = Analyze_Headers()
+        headers = Analyze_Headers(pdf_reader)
         headers, header_dict = headers.get_dict_from_html(html_set1)
 
         # get text
