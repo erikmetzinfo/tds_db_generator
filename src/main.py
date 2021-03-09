@@ -12,7 +12,7 @@ from typing import BinaryIO
 
 BASE_DIR = abspath(dirname(__file__) )
 def get_files_as_array():
-    TDS_PATH = BASE_DIR + '/data/tds/'
+    TDS_PATH = BASE_DIR + '/data/tds_pdf/'
     return [f for f in listdir(TDS_PATH) if isfile(join(TDS_PATH, f))], TDS_PATH
 
 def findInDict(needle, haystack):
