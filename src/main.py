@@ -173,36 +173,6 @@ class Analyze_Text(object):
                     value = pdf_text[page_number - 1][line + 1]
                     re[header].append(value)
 
-
-
-        re = dict()
-        for header in headers:
-            re[header] = list()
-            header_found = False
-            for page in pdf_text:
-                for index, line in enumerate(page):
-                    if header_found:
-                        if index < len(page):
-                            next_line = page[index + 1]
-                            re[header].append(line)
-                        else:
-                            header_found = False
-                            break
-
-                        for header_ in headers:
-                            if string_comparison(header_, line, max_value=self.__nlp_max_value)[0]:
-                                header_found = False
-                                break
-                        if not header_found:
-                            break
-
-                        # if any(substring in next_line for substring in headers):
-                        #     header_found = False
-                        #     break
-                    # elif header in line:
-                    elif string_comparison(header, line, max_value=self.__nlp_max_value)[0]:
-                        header_found = True
-
         return re
 def main():
     pdf_reader = Pdf_reader()
