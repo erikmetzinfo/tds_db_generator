@@ -3,23 +3,77 @@ import sys
 
 import pandas as pd
 
-from pdf_reader import Pdf_reader
+from pdf_reader import Pdf_reader, BASE_DIR, EXCLUDE_CHARACTERS
+from general_pkg import string_comparison
 from bs4 import BeautifulSoup
 
 
 # Files
-BASE_DIR = os.path.abspath(os.path.dirname(__file__) )
 def get_files_as_array(datatype: str='pdf') -> list:
     TDS_PATH = BASE_DIR + '/data/tds_pdf/'
     return [f for f in os.listdir(TDS_PATH) if f.endswith(datatype) if os.path.isfile(os.path.join(TDS_PATH, f))], TDS_PATH
 
-class Analyze_Headers(object):
-    def __init__(self, pdf_reader):
-        self.__BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+class Analyze_Html(object):
+    def __init__(self, pdf_reader): 
         self.__pdf_reader = pdf_reader
 
     @staticmethod
-    def __get_headers(div_container, headers, header_dict, page, page_found):
+    def __save_html_as_file(html_text, filename, delete_=False):
+        filename = filename.replace('tds_pdf','tds_html').replace('.pdf','.html')
+        with open(filename, 'w') as f:
+            f.write(html_text)
+
+        if delete_:
+            os.remove(filename)
+
+    def __get_soup(self, filename):
+        soup = None
+        html_text = None
+        with open(filename, 'rb') as f:
+            html_text = self.__pdf_reader.extract_html_from_pdf_with_pdf_miner(f)
+            soup = BeautifulSoup(html_text,'html.parser')
+
+        return soup, html_text
+
+    def get_header_dict_from_html(self, filename: str) -> tuple:
+        soup, html_text = self.__get_soup(filename)
+        header_analyzer = self.__Analyze_Header()
+        headers, header_dict = self.__get_info_from_soup(soup, header_analyzer)
+
+        self.__save_html_as_file(html_text, filename, delete_=True)
+
+        return headers, header_dict
+
+    def get_footer_dict_from_html(self, filename: str) -> tuple:
+        soup, html_text = self.__get_soup(filename)
+        footer_analyzer = self.__Analyze_Footer()
+        footers, footer_dict = self.__get_info_from_soup(soup, footer_analyzer)
+
+        self.__save_html_as_file(html_text, filename, delete_=True)
+
+        return footers, footer_dict
+
+    def __get_info_from_soup(self, soup, analyzer):
+        info_set = set()
+        info_dict = dict()
+        
+        div_style_tag = 'position:absolute; border: textbox 1px solid; writing-mode:lr-tb;'
+        div_containers = soup.find_all('div',style=lambda value: value and div_style_tag in value)
+        
+        page = 1
+        page_found = False
+        for div_container in div_containers:
+            info_set, info_dict, page, page_found = analyzer.get_info(div_container, info_set, info_dict, page, page_found)
+            #get_values(div_container)
+            if page_found:
+                page_found = False
+            
+        return info_set, info_dict
+
+
+    class __Analyze_Header(object):
+        @staticmethod
+        def get_info(div_container, info_set, info_dict, page, page_found):
             headers_per_page = set()
 
             span_headers = div_container.find_all('span', {'style':'font-family: BookmanOldStyle-Bold; font-size:10px'})
@@ -27,75 +81,127 @@ class Analyze_Headers(object):
                 header = span_header.text
                 header = header.replace('\n','').strip()
                 if header not in EXCLUDE_CHARACTERS:
-                    headers.add(header)
+                    info_set.add(header)
                     headers_per_page.add(header)
                     page_found = True
 
             if page_found:
                 page += 1
-                header_dict[page] = headers_per_page
+                info_dict[page] = headers_per_page
                 headers_per_page = None
                 headers_per_page = set()
 
-            return headers, header_dict, page, page_found
+            return info_set, info_dict, page, page_found
 
-    def __get_headers_from_soup(self, soup):
-            headers = set()
-            header_dict = dict()
-            
-            div_header_style_tag = 'position:absolute; border: textbox 1px solid; writing-mode:lr-tb;'
-            div_header_containers = soup.find_all('div',style=lambda value: value and div_header_style_tag in value)
-            
-            page = 1
-            page_found = False
-            for div_header_container in div_header_containers:
-                headers, header_dict, page, page_found = self.__get_headers(div_header_container, headers, header_dict, page, page_found)
-                #get_values(div_header_container)
-                if page_found:
+    class __Analyze_Footer(object):
+        @staticmethod
+        def get_info(div_container, info_set, info_dict, page, page_found):
+            footer_per_page = set()
 
-                    page_found = False
-                
-            return headers, header_dict
+            span_footers = div_container.find_all('span', {'style':'font-family: BookmanOldStyle; font-size:7px'})#
+            span_footers += div_container.find_all('span', {'style':'font-family: ArialMT; font-size:6px'})
+            # span_footers += div_container.find_all('span', {'style':'font-family: ArialRoundedMTBold; font-size:7px'})
+            # span_footers += div_container.find_all('span', {'style':'font-family: ArialMT; font-size:7px'})
+            # span_footers += div_container.find_all('span', {'style':'font-family: ArialMT; font-size:9px'})
+            # span_footers += div_container.find_all('span', {'style':'font-family: Arial-BoldMT; font-size:6px'})
+            # span_footers += div_container.find_all('span', {'style':'font-family: ArialRoundedMTBold; font-size:6px'})
+            for span_footer in span_footers:
+                footer = span_footer.text
+                footer = footer.replace('\n','').strip()
+                if footer not in EXCLUDE_CHARACTERS and len(footer) > 5:
+                    info_set.add(footer)
+                    footer_per_page.add(footer)
+                    page_found = True
 
-    def __get_dict_from_html(self, filename: str) -> tuple:
-        headers = set()
-        header_dict = dict()
-        with open(filename, 'rb') as f:
-            html_text = self.__pdf_reader.extract_html_from_pdf_with_pdf_miner(f)
-            soup = BeautifulSoup(html_text,'html.parser')
-            headers, header_dict = self.__get_headers_from_soup(soup)
+            if page_found:
+                page += 1
+                info_dict[page] = footer_per_page
+                footer_per_page = None
+                footer_per_page = set()
 
-        return headers, header_dict
-
-    def get_dict_from_html(self, html_set: set) -> tuple:
-        re = None
-        html_text = ""
-        html_filepath = f'{self.__BASE_DIR}/temp.html'
-        for html_text in html_set:
-            with open(html_filepath, 'w') as f:
-                f.write(html_text)
-                re = self.__get_dict_from_html(html_filepath)
-                os.remove(html_filepath)
-        return re
-
+            return info_set, info_dict, page, page_found
 
 class Analyze_Text(object):
     def __init__(self):
-        self.__BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+        self.__nlp_max_value = 90
+        self.__footer_keyword = 'END'
 
-    def get_pdf_dict(self, headers: list, pdf_text: dict, pdf_text_unsorted: dict) -> dict:
+    def __get_info_dict(self, info_set: list, pdf_text: dict) -> dict:
+        info_dict = dict()
+        info_dict_ = dict()
+        print('\n')
+        for page_number, page in enumerate(pdf_text):
+            info_dict[page_number + 1] = dict()
+            info_dict_[page_number + 1] = dict()
+            for info in info_set:
+                for index, line in enumerate(page):
+                    # if 'Important' in line and 'Important' in info:
+                    #     a = 1
+                    match, matching_value = string_comparison(info, line, max_value=self.__nlp_max_value)
+                    if match:
+                        print(f'{matching_value}\t{info[:15]}\t\t{line[:20]}')
+                        info_dict[page_number + 1][index] = line
+            for key, value in sorted(info_dict[page_number + 1].items()):
+                info_dict_[page_number + 1][key] = value
+
+        return info_dict_
+
+
+
+    def get_pdf_dict(self, headers: set, footers: set, pdf_text: dict, pdf_text_unsorted: dict) -> dict:
+        headers_dict = self.__get_info_dict(headers, pdf_text)
+        footer_dict = self.__get_info_dict(footers, pdf_text)
+
+        # add footer to info_dict
+        info_dict = headers_dict.copy()
+        for page_number in info_dict.keys():
+            key = list(footer_dict[page_number].keys())[0]
+            # value = footer_dict[page_number][key]
+            info_dict[page_number][key] = self.__footer_keyword#value
+
+
+        re = dict()
+        for page_number in info_dict.keys():
+            for index in range(len(info_dict[page_number])):
+                header_line = list(info_dict[page_number])[index]
+                header = info_dict[page_number][header_line]
+                if header == self.__footer_keyword:
+                    break
+                next_header_line = list(info_dict[page_number])[index + 1]
+                re[header] = list()
+                for line in range(header_line, next_header_line - 1):
+                    value = pdf_text[page_number - 1][line + 1]
+                    re[header].append(value)
+
+
+
         re = dict()
         for header in headers:
             re[header] = list()
             header_found = False
-            for index, line in enumerate(pdf_text):
-                if header_found:
-                    next_line = pdf_text[index + 1]
-                    re[header].append(line)
-                    if any(substring in next_line for substring in headers):
-                        break
-                elif header in line:
-                    header_found = True
+            for page in pdf_text:
+                for index, line in enumerate(page):
+                    if header_found:
+                        if index < len(page):
+                            next_line = page[index + 1]
+                            re[header].append(line)
+                        else:
+                            header_found = False
+                            break
+
+                        for header_ in headers:
+                            if string_comparison(header_, line, max_value=self.__nlp_max_value)[0]:
+                                header_found = False
+                                break
+                        if not header_found:
+                            break
+
+                        # if any(substring in next_line for substring in headers):
+                        #     header_found = False
+                        #     break
+                    # elif header in line:
+                    elif string_comparison(header, line, max_value=self.__nlp_max_value)[0]:
+                        header_found = True
 
         return re
 def main():
@@ -116,11 +222,9 @@ def main():
         # text_PyPDF2 = pdf_reader.clean_data(text_PyPDF2)
         
         # get headers
-        html_set1 = pdf_reader.get_text_from_pdf(tds_path, filename, method=2, output_type='html')
-        html_set2 = pdf_reader.get_text_from_pdf(tds_path, filename, method=1, output_type='html')
-        html_set3 = pdf_reader.get_text_from_pdf(tds_path, filename, method=3, output_type='html')
-        headers = Analyze_Headers(pdf_reader)
-        headers, header_dict = headers.get_dict_from_html(html_set1)
+        html_analyzer = Analyze_Html(pdf_reader)
+        headers, header_dict = html_analyzer.get_header_dict_from_html(tds_path + filename)
+        footers, footer_dict = html_analyzer.get_footer_dict_from_html(tds_path + filename)
 
         # get text
         text_tesseract = pdf_reader.get_text_from_pdf(tds_path, filename, method=4, output_type='text', dpi=500)
@@ -129,7 +233,7 @@ def main():
         text_PyMuPDF = pdf_reader.clean_data(text_PyMuPDF)
         
         analyzer = Analyze_Text()
-        pdf_dict = analyzer.get_pdf_dict(headers, text_tesseract, text_PyMuPDF)
+        pdf_dict = analyzer.get_pdf_dict(headers, footers, text_tesseract, text_PyMuPDF)
 
     a = 999
 

@@ -15,11 +15,11 @@ except ImportError:
 import pdf2image
 import fitz
 
-class Pdf_reader(object):
-    def __init__(self):
-        self.__BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-        self.__EXCLUDE_CHARACTERS = {'',' ','\n'}   
 
+BASE_DIR = os.path.abspath(os.path.dirname(__file__) )
+EXCLUDE_CHARACTERS = {'',' ','\n'}  
+
+class Pdf_reader(object):
     @staticmethod
     def get_general_data_of_pdf_with_pypdf(filepath: str) -> dict:
         info_dict = dict()
@@ -63,13 +63,13 @@ class Pdf_reader(object):
         for i in range(len(pages)):
             pages[i].save(f'{to_filepath}{i}.jpg')
 
-    def clean_data(self, pages_set: set) -> list:
+    def clean_data(self, pages_array) -> list:
         text_list = list()
-        for index, page in enumerate(pages_set):
+        for index, page in enumerate(pages_array):
             page_list = page.split('\n')
             text_list.append(list())
             for line in page_list:
-                if line.strip() not in self.__EXCLUDE_CHARACTERS:
+                if line.strip() not in EXCLUDE_CHARACTERS:
                     text_list[index].append(line.strip())
 
         return text_list
@@ -100,8 +100,9 @@ class Pdf_reader(object):
         :return: extracted text
         :raises pdfminer.pdftypes.PDFException: on invalid PDF
         """
-        from pdfminer.high_level import extraextract_text_to_fpct_pages
+        from pdfminer.high_level import extract_text_to_fp
         from pdfminer.layout import LAParams
+        from io import StringIO
         out_fo = StringIO()
         extract_text_to_fp(pdf_fo, out_fo, laparams=LAParams(), output_type='html', codec=None)
         return out_fo.getvalue()
@@ -136,7 +137,7 @@ class Pdf_reader(object):
         #                     if isinstance(character, LTChar):
         #                         print(character.fontname)
         #                         print(character.size)
-        pages_set = set()
+        pages_list = list()
         page_text = ''
         from pdfminer.high_level import extract_pages
         from pdfminer.layout import LTTextContainer, LTChar, LTTextLineHorizontal, LTTextLine
@@ -156,33 +157,33 @@ class Pdf_reader(object):
                         most_common_size_in_line = list(font_line_details['size'].keys())[0]
                         if isinstance(text_line, LTTextLine):
                             page_text += text_line.get_text()
-            pages_set.add(page_text)
+            pages_list.append(page_text)
 
-        return pages_set
+        return pages_list
 
     @staticmethod
     def __extract_text_from_pdf_with_PyMuPDF(filepath: str, filename: str, output_type:str) -> list:
         """
         :param output_type: text, blocks, words, html, dict, json, rawdict, rawjson, xhtml, xml
         """
-        pages_set = set()
+        pages_list = list()
         doc = fitz.open(filepath + filename)
         for page in doc:
-            pages_set.add(page.get_text(output_type))
+            pages_list.append(page.get_text(output_type))
 
-        return pages_set
+        return pages_list
 
     @staticmethod
     def __extract_text_from_pdf_with_PyPDF2(filepath: str, filename: str) -> list:
-        pages_set = set()
+        pages_list = list()
         with open(filepath + filename,'rb') as f:
             pdf = pypdf.PdfFileReader(f)
 
             for page in pdf.pages:
                 text = page.extractText()
-                pages_set.add(text)
+                pages_list.append(text)
 
-        return pages_set
+        return pages_list
 
     def __extract_text_from_pdf_with_tesseract(self, filepath: str, filename: str, lang: str='eng', dpi: int=200, psm: int=6) -> list:
         """
@@ -203,9 +204,9 @@ class Pdf_reader(object):
         good        12    Sparse text with OSD.
         weird       13    Raw line. Treat the image as a single text line, bypassing hacks that are Tesseract-specific.
         """
-        pages_set = set()
+        pages_list = list()
         # for i in range(len(pages)):
-        #     pages_set.add(pt.image_to_string(pages[i], lang=lang))
+        #     pages_list.append(pt.image_to_string(pages[i], lang=lang))
 
         doc = fitz.open(filepath + filename)
         zoom_x = 2.0
@@ -213,16 +214,16 @@ class Pdf_reader(object):
         mat = fitz.Matrix(zoom_x, zoom_y)
         for index, page in enumerate(doc):
             pixmap = page.get_pixmap(matrix=mat, colorspace='GRAY', alpha = False)
-            image_filepath = f'{self.__BASE_DIR}/temp.png'
+            image_filepath = f'{BASE_DIR}/temp.png'
             pixmap.writeImage(image_filepath)
 
             # custom_config = r'--oem 3 --psm 6 outputbase digits'
             custom_config = fr'--psm {psm}'
             text = pt.image_to_string(Image.open(image_filepath), lang=lang, config=custom_config, nice=0)#, output_type='text')
-            pages_set.add(text)
+            pages_list.append(text)
             os.remove(image_filepath)
 
-        return pages_set
+        return pages_list
 
 
 
