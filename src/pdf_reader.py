@@ -8,15 +8,20 @@ from typing import BinaryIO
 from bs4 import BeautifulSoup
 import pandas as pd
 import pytesseract as pt
+try:
+    from PIL import Image
+except ImportError:
+    import Image
 import pdf2image
 import fitz
 
 class Pdf_reader(object):
     def __init__(self):
         self.__BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+        self.__EXCLUDE_CHARACTERS = {'',' ','\n'}   
 
     @staticmethod
-    def get_general_data_of_pdf(filepath: str) -> dict:
+    def get_general_data_of_pdf_with_pypdf(filepath: str) -> dict:
         info_dict = dict()
         with open(filepath,'rb') as f:
             pdf = pypdf.PdfFileReader(f)
@@ -31,6 +36,13 @@ class Pdf_reader(object):
             info_dict['number_of_pages'] = pdf.getNumPages()
 
         return info_dict
+    
+    @staticmethod
+    def get_general_data_of_pdf_with_PyMuPDF(filepath: str) -> dict:
+        doc = fitz.open(filepath)
+        info_dict = doc.metadata
+        
+        return info_dict
 
     @staticmethod
     def save_pdf_as_img_with_PyMuPDF(filepath: str, filename: str, to_filepath: str, img_output_type: str='png', dpi: int=200):
@@ -39,8 +51,8 @@ class Pdf_reader(object):
         """
         doc = fitz.open(filepath + filename)
         for page in doc:
-            pixmap = page.get_pixmap(img_output_type, dpi=dpi)
-            pixmap.writeImage(f'{to_filepath}{page.number}.png')
+            pixmap = page.get_pixmap(dpi=dpi)
+            pixmap.writeImage(f'{to_filepath}{page.number}.{img_output_type}')
     
     @staticmethod
     def save_pdf_as_img_with_pdf2image(filepath: str, filename: str, to_filepath: str, img_output_type: str='png', dpi: int=200):
@@ -51,7 +63,19 @@ class Pdf_reader(object):
         for i in range(len(pages)):
             pages[i].save(f'{to_filepath}{i}.jpg')
 
-    def get_text_from_pdf(self, filepath: str, filename: str, method: int=1, output_type: str='text'):
+    def clean_data(self, pages_set: set) -> list:
+        text_list = list()
+        for index, page in enumerate(pages_set):
+            page_list = page.split('\n')
+            text_list.append(list())
+            for line in page_list:
+                if line.strip() not in self.__EXCLUDE_CHARACTERS:
+                    text_list[index].append(line.strip())
+
+        return text_list
+
+
+    def get_text_from_pdf(self, filepath: str, filename: str, method: int=1, output_type: str='text', dpi: int=200):
         """
         :param method: 1=pdf_miner, 2=PyMuPDF, 3=PyPDF2, 4=tesseract
         :param output_type: text, html, xml
@@ -63,12 +87,11 @@ class Pdf_reader(object):
         elif method == 3:
             return self.__extract_text_from_pdf_with_PyPDF2(filepath, filename)
         elif method == 4:
-            return self.__extract_text_from_pdf_with_tesseract(filepath, filename)
+            return self.__extract_text_from_pdf_with_tesseract(filepath, filename, dpi=dpi)
         else:
             return ''
 
-    @staticmethod
-    def __extract_text_from_pdf_with_pdf_miner(pdf_fo: BinaryIO, output_type:str) -> str:
+    def __extract_text_from_pdf_with_pdf_miner(self,filepath: str, output_type:str) -> str:
         """
         https://pdfminersix.readthedocs.io/_/downloads/en/latest/pdf/
         Extracts text from a PDF
@@ -78,44 +101,128 @@ class Pdf_reader(object):
         :return: extracted text
         :raises pdfminer.pdftypes.PDFException: on invalid PDF
         """
-        from io import StringIO
-        import pdfminer
-        out_fo = StringIO()
-        pdfminer.high_level.extract_text_to_fp(pdf_fo, out_fo, laparams=pdfminer.layout.LAParams(), output_type=output_type, codec=None)
-        return out_fo.getvalue()
+        # from pdfminer.high_level import extract_pages
+        # for page_layout in extract_pages(filepath):
+        #     for element in page_layout:
+        #         print(element)
+
+        # from pdfminer.layout import LTTextContainer
+        # for page_layout in extract_pages(filepath):
+        #     for element in page_layout:
+        #         if isinstance(element, LTTextContainer):
+        #             print(element.get_text())
+
+        # from pdfminer.layout import LTTextContainer, LTChar
+        # for page_layout in extract_pages(filepath):
+        #     for element in page_layout:
+        #         if isinstance(element, LTTextContainer):
+        #             for text_line in element:
+        #                 for character in text_line:
+        #                     if isinstance(character, LTChar):
+        #                         print(character.fontname)
+        #                         print(character.size)
+        pages_set = set()
+        page_text = ''
+        from pdfminer.high_level import extract_pages
+        from pdfminer.layout import LTTextContainer, LTChar, LTTextLineHorizontal, LTTextLine
+        for page_layout in extract_pages(filepath):
+            for element in page_layout:
+                if isinstance(element, LTTextContainer):
+                    for text_line in element:
+                        font_details = dict()
+                        font_details['fontname'] = list()
+                        font_details['size'] = list()
+                        for character in text_line:
+                            if isinstance(character, LTChar):
+                                font_details['fontname'].append(character.fontname)
+                                font_details['size'].append(character.size)
+                        font_line_details = self.__get_details_of_dict(font_details)
+                        most_common_fontname_in_line = list(font_line_details['fontname'].keys())[0]
+                        most_common_size_in_line = list(font_line_details['size'].keys())[0]
+                        if isinstance(text_line, LTTextLine):
+                            page_text += text_line.get_text()
+            pages_set.add(page_text)
+
+        return pages_set
 
     @staticmethod
     def __extract_text_from_pdf_with_PyMuPDF(filepath: str, filename: str, output_type:str) -> list:
         """
         :param output_type: text, blocks, words, html, dict, json, rawdict, rawjson, xhtml, xml
         """
-        text_list = list()
+        pages_set = set()
         doc = fitz.open(filepath + filename)
         for page in doc:
-            text_list.append(page.get_text(output_type))
+            pages_set.add(page.get_text(output_type))
 
-        return text_list
+        return pages_set
 
     @staticmethod
     def __extract_text_from_pdf_with_PyPDF2(filepath: str, filename: str) -> list:
-        text_list = set()
-        with open(filepath,'rb') as f:
+        pages_set = set()
+        with open(filepath + filename,'rb') as f:
             pdf = pypdf.PdfFileReader(f)
 
             for page in pdf.pages:
                 text = page.extractText()
-                text_list.add(text)
+                pages_set.add(text)
 
-        return text_list
+        return pages_set
+
+    def __extract_text_from_pdf_with_tesseract(self, filepath: str, filename: str, lang: str='eng', dpi: int=200, psm: int=6) -> list:
+        """
+        psm
+        Page segmentation modes:
+        ok          0    Orientation and script detection (OSD) only.
+        not working 1    Automatic page segmentation with OSD.
+        not working 2    Automatic page segmentation, but no OSD, or OCR.
+        ok          3    Fully automatic page segmentation, but no OSD. (Default)
+        good        4    Assume a single column of text of variable sizes.
+        weird       5    Assume a single uniform block of vertically aligned text.
+        !perfect    6    Assume a single uniform block of text.
+        weird       7    Treat the image as a single text line.
+        weird       8    Treat the image as a single word.
+        weird       9    Treat the image as a single word in a circle.
+        weird       10    Treat the image as a single character.
+        good        11    Sparse text. Find as much text as possible in no particular order.
+        good        12    Sparse text with OSD.
+        weird       13    Raw line. Treat the image as a single text line, bypassing hacks that are Tesseract-specific.
+        """
+        pages_set = set()
+        # for i in range(len(pages)):
+        #     pages_set.add(pt.image_to_string(pages[i], lang=lang))
+
+        doc = fitz.open(filepath + filename)
+        zoom_x = 2.0
+        zoom_y = 2.0
+        mat = fitz.Matrix(zoom_x, zoom_y)
+        for index, page in enumerate(doc):
+            pixmap = page.get_pixmap(matrix=mat, colorspace='GRAY', alpha = False)
+            image_filepath = f'{self.__BASE_DIR}/temp.png'
+            pixmap.writeImage(image_filepath)
+
+            # custom_config = r'--oem 3 --psm 6 outputbase digits'
+            custom_config = fr'--psm {psm}'
+            text = pt.image_to_string(Image.open(image_filepath), lang=lang, config=custom_config, nice=0)#, output_type='text')
+            pages_set.add(text)
+            os.remove(image_filepath)
+
+        return pages_set
+
+
 
     @staticmethod
-    def __extract_text_from_pdf_with_tesseract(filepath: str, filename: str, lang: str='eng', dpi: int=200) -> list:
-        text_list = set()
-        pages = pdf2image.convert_from_path(pdf_path=filepath + filename, dpi=dpi)
-        for i in range(len(pages)):
-            text_list.add(pt.image_to_string(pages[i], lang=lang))
+    def __get_details_of_dict(dict_: dict) -> dict:
+        re_dict = dict()
+        for key in dict_.keys():
+            re_dict[key] = dict()
+            for attr in dict_[key]:
+                if attr not in re_dict[key].keys():
+                    re_dict[key][attr] = 1
+                else:
+                    re_dict[key][attr] += 1
 
-        return text_list
+        return re_dict
 
 """
 class Pdf_analyzer(object):
