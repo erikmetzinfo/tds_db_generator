@@ -1,17 +1,55 @@
 import os
 import sys
+import shutil
+import pickle
 
 import pandas as pd
+from bs4 import BeautifulSoup
 
 from pdf_reader import Pdf_reader, BASE_DIR, EXCLUDE_CHARACTERS
 from general_pkg import string_comparison
-from bs4 import BeautifulSoup
+from keyword import Keyword
 
 
 # Files
+def pickle_get_content(file_path):
+    '''Returns the content of a pickle file.
+
+        Args:
+            file_path (str): path and name of the json file to store
+                (example /Users/example_user/project_name/file_name.pickle)
+
+        Returns:
+            str: content of the pickle file as string
+    '''
+    with open(file_path,'rb') as f:
+        try:
+            content = pickle.load(f)
+        except EOFError:
+            content = None
+        return content
+
+def pickle_dump_content(file_path,content):
+    '''Write the content into a pickle file.
+
+        Args:
+            file_path (str): path and name of the json file to store
+                (example /Users/example_user/project_name/file_name.pickle)
+            content (str): the text which should be stored in the pickle file
+    '''
+    # print('dump pickle')
+    with open(file_path,'wb') as f:
+        pickle.dump(content,f)
+
 def get_files_as_array(datatype: str='pdf') -> list:
     TDS_PATH = BASE_DIR + '/data/tds_pdf/'
     return [f for f in os.listdir(TDS_PATH) if f.endswith(datatype) if os.path.isfile(os.path.join(TDS_PATH, f))], TDS_PATH
+
+def move_files(tds_path, filename, pdf_dict):
+    destination = tds_path.replace('tds_pdf','tds_pdf_done')
+    dest = shutil.move(tds_path + filename, destination + filename)
+    pickle_destination = tds_path + filename.replace('.pdf', '.pickle')
+    pickle_dump_content(pickle_destination, pdf_dict)
 
 class Analyze_Html(object):
     def __init__(self, pdf_reader): 
@@ -126,10 +164,23 @@ class Analyze_Text(object):
         self.__nlp_max_value = 90
         self.__footer_keyword = 'END'
 
+    @staticmethod
+    def __special_string_comparison(string1, string2):
+        reverse_string2 = string2[::-1]
+        string1_ = string1
+        last_pos=0
+        for c in reverse_string2:
+            pos = string1_.rfind(c)
+            if pos > last_pos:
+                last_pos = pos
+                string1_ = string1_[:pos]
+        val = string1[last_pos + 1:].strip()
+        return val
+
     def __get_info_dict(self, info_set: list, pdf_text: dict) -> dict:
         info_dict = dict()
         info_dict_ = dict()
-        print('\n')
+        # print('\n')
         for page_number, page in enumerate(pdf_text):
             info_dict[page_number + 1] = dict()
             info_dict_[page_number + 1] = dict()
@@ -139,16 +190,14 @@ class Analyze_Text(object):
                     #     a = 1
                     match, matching_value = string_comparison(info, line, max_value=self.__nlp_max_value)
                     if match:
-                        print(f'{matching_value}\t{info[:15]}\t\t{line[:20]}')
+                        # print(f'{matching_value}\t{info[:15]}\t\t{line[:20]}')
                         info_dict[page_number + 1][index] = line
             for key, value in sorted(info_dict[page_number + 1].items()):
                 info_dict_[page_number + 1][key] = value
 
         return info_dict_
 
-
-
-    def get_pdf_dict(self, headers: set, footers: set, pdf_text: dict, pdf_text_unsorted: dict) -> dict:
+    def get_pdf_dict(self, headers: set, footers: set, pdf_text: dict) -> dict:
         headers_dict = self.__get_info_dict(headers, pdf_text)
         footer_dict = self.__get_info_dict(footers, pdf_text)
 
@@ -174,7 +223,89 @@ class Analyze_Text(object):
                     re[header].append(value)
 
         return re
-def main():
+    
+    def get_pdf_dict_detailed(self, pdf_dict: dict, unsorted_list: list) -> dict:
+        re = dict()
+        for header in pdf_dict.keys():
+            re[header] = dict()
+            for parameter in pdf_dict[header]:
+
+                for page in unsorted_list:
+                    for line in page:
+                        match, matching_value = string_comparison(parameter, line, max_value=100)
+                        if match:
+                            if 'Ratio' in parameter:
+                                a=1
+                            param = line.strip()
+                            value = parameter.replace(param, '').strip()
+                            value_ = self.__special_string_comparison(parameter, param)
+                            
+                            found_param = False
+                            if parameter.startswith(param):
+                                found_param = True
+                            elif value_ != value:
+                                if parameter.endswith(value_) and value_ != '':
+                                    value = value_
+                                    found_param = True
+                            
+                            if found_param:
+                                p_in_param = False
+                                for p in re[header]:
+                                    match_, matching_value_ = string_comparison(param, p, max_value=95)
+                                    if match_:
+                                        p_in_param = True
+                                        break
+                                if not p_in_param:
+                                    if value == '':
+                                        # TODO
+                                        re[header][param] = value
+                                    else:
+                                        re[header][param] = value
+                            # else:
+                            #     # special sitauation try to eliminate all spaces
+                            #     param_ = line.strip().replace(' ','')
+                            #     parameter_ = parameter.replace(' ','')
+                            #     value = parameter_.replace(param_, '').strip()
+                            #     if parameter_.startswith(param_):
+                            #         a=1
+                                
+
+        detailed_dict = dict()
+        for header in pdf_dict.keys():
+            detailed_dict[header] = dict()
+            for param in pdf_dict[header]:
+
+
+                param_included = False
+                for param_ in re[header]:
+
+                    if param.startswith(param_):
+                        detailed_dict[header][param_] = re[header][param_]
+                        param_included = True
+                        break
+                if not param_included:
+                    detailed_dict[header][param] = pdf_dict[header][param]
+
+        return detailed_dict
+
+    @staticmethod
+    def get_pdf_headers(pdf_headers, pdf_dict):
+        for header in pdf_dict.keys():
+            if header not in pdf_headers.keys():
+                pdf_headers[header] = pdf_dict[header]
+            else:
+                for param in pdf_dict[header]:
+                    pdf_headers[header].append(param)
+
+        return pdf_headers
+
+    @staticmethod
+    def get_most_used_items(items_to_search):
+        items_set = set()
+        for item in items_to_search:
+
+
+def get_pickled_pdfs():
     pdf_reader = Pdf_reader()
     filenames, tds_path = get_files_as_array(datatype=".pdf")
     for filename in filenames:
@@ -203,9 +334,33 @@ def main():
         text_PyMuPDF = pdf_reader.clean_data(text_PyMuPDF)
         
         analyzer = Analyze_Text()
-        pdf_dict = analyzer.get_pdf_dict(headers, footers, text_tesseract, text_PyMuPDF)
+        try:
+            pdf_dict = analyzer.get_pdf_dict(headers, footers, text_tesseract)
+            move_files(tds_path, filename, pdf_dict)
+        except Exception as e:
+            print(e)
 
-    a = 999
+def unpickle_dicts():
+    analyzer = Analyze_Text()
+    pdf_headers = dict()
+
+    filenames, tds_path = get_files_as_array(datatype=".pickle")
+    for filename in filenames:
+        pdf_dict = pickle_get_content(tds_path + filename)
+        pdf_headers = analyzer.get_pdf_headers(pdf_headers, pdf_dict)
+        # pdf_dict_detailed = analyzer.get_pdf_dict_detailed(pdf_dict, text_PyMuPDF)
+
+        a=1
+
+    keyword_analyzer = Keyword()
+    headers = keyword_analyzer.analyze(pdf_headers.keys())
+
+    a=1
+
+def main():
+    # get_pickled_pdfs()
+    unpickle_dicts()
+
 
 """
 def main():

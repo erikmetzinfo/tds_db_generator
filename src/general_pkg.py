@@ -164,7 +164,7 @@ def string_comparison(string1, string2, max_value=99):
     average = fuzz.token_set_ratio(string1, string2)
 
     average_rounded = int(average * 100) / 100
-    if average_rounded > max_value:
+    if average_rounded >= max_value:
         return True, average_rounded
     else:
         return False, average_rounded
@@ -191,7 +191,7 @@ def string_list_comparison(string, string_list, max_value=99):
 
         average = statistics.mean(ratios)
         average_rounded = int(average * 100) / 100
-        if average > max_value:
+        if average >= max_value:
             return True, average_rounded
         else:
             return False, average_rounded
