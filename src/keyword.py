@@ -4,6 +4,7 @@ import pandas as pd
 import os
 import time
 import csv
+import pickle
 
 from PIL import Image
 from wordcloud import WordCloud, STOPWORDS, ImageColorGenerator
@@ -47,15 +48,36 @@ from scipy.sparse import coo_matrix
 
 from pdf_reader import BASE_DIR
 
+LATIN_NUMERICAL_PREFIX = ['uni', 'bi', 'tri', 'quadri', 'quinque', 'sex', 'sept', 'oct', 'nonus', 'dec', 'undec', 'duodec']
 
+def pickle_get_content(file_path):
+    '''Returns the content of a pickle file.
+
+        Args:
+            file_path (str): path and name of the json file to store
+                (example /Users/example_user/project_name/file_name.pickle)
+
+        Returns:
+            str: content of the pickle file as string
+    '''
+    with open(file_path,'rb') as f:
+        try:
+            content = pickle.load(f)
+        except EOFError:
+            content = None
+        return content
 
 
 
 
 # find keywords in general
-class Keyword:
-    def __init__(self):
-        self.__PATH_CUSTOM_STOP_WORDS = BASE_DIR + '/stop_words.txt'
+class Keyword_Analyzer(object):
+    def __init__(self, datacol=None):
+        self.__PATH_CUSTOM_STOP_WORDS = BASE_DIR + '/data/stop_words.txt'
+        if datacol == None:
+            self.__datacol = 'data'
+        else:
+            self.__datacol = datacol
 
     def print_status(func):# pylint: disable=no-self-argument
         def wrapper(self,*args,**kwargs):
@@ -88,17 +110,19 @@ class Keyword:
 
             extractor = Extractor()
             number_of_words = 100
-            most_freq_words = extractor.extract_most_freq_words(corpus, n_in=number_of_words)
-            most_freq_bigrams = extractor.extract_most_freq_bigrams(corpus, n_in=number_of_words)
-            most_freq_trigrams = extractor.extract_most_freq_trigrams(corpus, n_in=number_of_words)
+            for i in range(8):
+                _ = extractor.extract_most_freq_x_grams(corpus, nx=i ,n_in=number_of_words)
+            # most_freq_words = extractor.extract_most_freq_words(corpus, n_in=number_of_words)
+            # most_freq_bigrams = extractor.extract_most_freq_bigrams(corpus, n_in=number_of_words)
+            # most_freq_trigrams = extractor.extract_most_freq_trigrams(corpus, n_in=number_of_words)
 
             tf_idf = TF_IDF()
             tf_idf = tf_idf.get_tf_idf(corpus, cv, X, ds_count)
 
-        self.__save_result_in_several_csvs_with_full_details()
+        #self.__save_result_in_several_csvs_with_full_details()
 
 
-        return tokenized_vocabulary,most_freq_words,most_freq_bigrams,most_freq_trigrams,tf_idf
+        return tokenized_vocabulary,tf_idf
 
     @print_status
     def __get_dataframe(self, input_, column_names_to_drop=None, content_dict=None, print_details=False):
@@ -108,13 +132,11 @@ class Keyword:
             df = df.drop(column_names_to_drop, axis=1)
             # print(df.describe)
         elif type(input_) == list:
-            df = pd.DataFrame(input_, columns=['data'])
+            df = pd.DataFrame(input_, columns=[self.__datacol])
             print(df.head)
             print(df.describe)
         else:
             return
-
-
 
         # View 10 most common words prior to text pre-processing
         freq = pd.Series(' '.join(map(str, df[self.__datacol])).split()).value_counts()[:10]
@@ -123,8 +145,6 @@ class Keyword:
 
         if print_details: print(freq)
         if print_details: print(freq1)
-
-        #
 
         corpus,stop_words,ds_count = self.__clean_dataset(df,print_details=print_details)
 
@@ -215,6 +235,8 @@ class Keyword:
 
     @print_status
     def __save_result_in_several_csvs_with_full_details(self):
+        pass
+        """
         df_all = pd.read_csv(self.__path, delimiter=',')
         result_list = []#df_all[0:0]#pd.DataFrame()#df_all[0:0]
 
@@ -260,110 +282,41 @@ class Keyword:
         
         df_overall_result.to_csv(os.path.abspath(os.path.dirname(__file__)) + '/data/data_result_keywords.csv')
         return df_overall_result
+        """
 
-# get mono-, bi- and trigrams
 class Extractor:
-    def __init__(self):
-        pass
-
-    # MONO
-    def extract_most_freq_words(self,corpus, n_in=None, print_details=False):
-        # Convert most freq words to dataframe for plotting bar plot, save as CSV
-        if n_in == None:
-            n = 20
-        else:
-            n = n_in
-        top_words = self.__get_top_n_words(corpus, n=n)
-        top_df = pd.DataFrame(top_words)
-        top_df.columns=["Keyword", "Frequency"]
-        if print_details: print(top_df)
-        top_df.to_csv(os.path.abspath(os.path.dirname(__file__)) + '/results/top_words.csv')
-
-        # Barplot of most freq words
-        sns.set(rc={'figure.figsize':(13,8)})
-        g = sns.barplot(x="Keyword", y="Frequency", data=top_df, palette="Blues_d")
-        g.set_xticklabels(g.get_xticklabels(), rotation=45)
-        g.figure.savefig(os.path.abspath(os.path.dirname(__file__)) +  '/results/keyword.png', bbox_inches = "tight")
-
-        return top_df
-        
-    @staticmethod
-    def __get_top_n_words(corpus, n=None):
-        vec = CountVectorizer().fit(corpus)
-        bag_of_words = vec.transform(corpus)
-        sum_words = bag_of_words.sum(axis=0) 
-        words_freq = [(word, sum_words[0, idx]) for word, idx in      
-                    vec.vocabulary_.items()]
-        words_freq =sorted(words_freq, key = lambda x: x[1], 
-                        reverse=True)
-        return words_freq[:n]
-
-
-    # BI
-    def extract_most_freq_bigrams(self,corpus, n_in=None, print_details=False):
-        # Convert most freq bigrams to dataframe for plotting bar plot, save as CSV
-        if n_in == None:
-            n = 20
-        else:
-            n = n_in
-        top2_words = self.__get_top_n2_words(corpus, n=n)
-        top2_df = pd.DataFrame(top2_words)
-        top2_df.columns=["Bi-gram", "Frequency"]
-        if print_details: print(top2_df)
-        top2_df.to_csv(os.path.abspath(os.path.dirname(__file__)) +  '/results/bigrams.csv')
-
-        # Barplot of most freq Bi-grams
-        sns.set(rc={'figure.figsize':(13,8)})
-        h=sns.barplot(x="Bi-gram", y="Frequency", data=top2_df, palette="Blues_d")
-        h.set_xticklabels(h.get_xticklabels(), rotation=75)
-        h.figure.savefig(os.path.abspath(os.path.dirname(__file__)) +  "/results/bi-gram.png", bbox_inches = "tight")
-
-        return top2_df
-
-    @staticmethod
-    def __get_top_n2_words(corpus, n=None):
-        vec1 = CountVectorizer(ngram_range=(2,2),  
-                max_features=2000).fit(corpus)
-        bag_of_words = vec1.transform(corpus)
-        sum_words = bag_of_words.sum(axis=0) 
-        words_freq = [(word, sum_words[0, idx]) for word, idx in     
-                    vec1.vocabulary_.items()]
-        words_freq =sorted(words_freq, key = lambda x: x[1], 
-                    reverse=True)
-        return words_freq[:n]
-
-
-    # TRI
-    def extract_most_freq_trigrams(self,corpus, n_in=None, print_details=False):
+    def extract_most_freq_x_grams(self,corpus, nx=None, n_in=None, print_details=False):
         # Convert most freq trigrams to dataframe for plotting bar plot, save as CSV
         if n_in == None:
             n = 20
         else:
             n = n_in
-        top3_words = self.__get_top_n3_words(corpus, n=n)
-        top3_df = pd.DataFrame(top3_words)
-        top3_df.columns=["Tri-gram", "Frequency"]
-        if print_details: print(top3_df)
-        top3_df.to_csv(os.path.abspath(os.path.dirname(__file__)) + '/results/trigrams.csv')
+        
+        prefix = LATIN_NUMERICAL_PREFIX[nx]
+        topx_words = self.__get_top_nx_words(corpus, nx=nx + 1, n=n)
+        topx_df = pd.DataFrame(topx_words)
+        topx_df.columns=[f"{prefix.capitalize()}-gram", "Frequency"]
+        if print_details: print(topx_df)
+        topx_df.to_csv(os.path.abspath(os.path.dirname(__file__)) + f'/results/{nx + 1}_{prefix}grams.csv')
 
         # Barplot of most freq Tri-grams
         sns.set(rc={'figure.figsize':(13,8)})
-        j=sns.barplot(x="Tri-gram", y="Frequency", data=top3_df, palette="Blues_d")
+        j=sns.barplot(x=f"{prefix.capitalize()}-gram", y="Frequency", data=topx_df, palette="Blues_d")
         j.set_xticklabels(j.get_xticklabels(), rotation=75)
-        j.figure.savefig(os.path.abspath(os.path.dirname(__file__)) + "/results/tri-gram.png", bbox_inches = "tight")
+        j.figure.savefig(os.path.abspath(os.path.dirname(__file__)) + f"/results/{nx + 1}_{prefix}-gram.png", bbox_inches = "tight")
 
-        return top3_df
+        return topx_df
 
     @staticmethod
-    def __get_top_n3_words(corpus, n=None):
-        vec1 = CountVectorizer(ngram_range=(3,3), 
-            max_features=2000).fit(corpus)
-        bag_of_words = vec1.transform(corpus)
+    def __get_top_nx_words(corpus, nx=1, n=None):
+        if nx == 1:
+            vec = CountVectorizer().fit(corpus)
+        else:
+            vec = CountVectorizer(ngram_range=(nx,nx), max_features=2000).fit(corpus)
+        bag_of_words = vec.transform(corpus)
         sum_words = bag_of_words.sum(axis=0) 
-        words_freq = [(word, sum_words[0, idx]) for word, idx in     
-                    vec1.vocabulary_.items()]
-        words_freq =sorted(words_freq, key = lambda x: x[1], 
-                    reverse=True)
+        words_freq = [(word, sum_words[0, idx]) for word, idx in vec.vocabulary_.items()]
+        words_freq =sorted(words_freq, key = lambda x: x[1], reverse=True)
         return words_freq[:n]
 
 # Term frequency-inverse document frequency
@@ -445,15 +398,27 @@ class TF_IDF:
 
         
     
+def delete_all_results_in(filepath):
+    for f in os.listdir(filepath):
+        os.remove(os.path.join(filepath, f))
 
+    #return [f for f in os.listdir(TDS_PATH) if f.endswith(datatype) if os.path.isfile(os.path.join(TDS_PATH, f))], TDS_PATH
 
-def main():
+def main1():
     path = os.path.abspath(os.path.dirname(__file__)) + '/data/data_result_s_s.csv'
     path = os.path.abspath(os.path.dirname(__file__)) + '/data/data_result.csv'
 
     datacol = 'Additional comments'
-    keyword = Keyword(path,datacol)
-    tokenized_vocabulary,most_freq_words,most_freq_bigrams,most_freq_trigrams,tf_idf = keyword.analyze()
+    keyword = Keyword_Analyzer(datacol)
+    tokenized_vocabulary,most_freq_words,most_freq_bigrams,most_freq_trigrams,tf_idf = keyword.analyze(path)
+
+def main():
+    delete_all_results_in(BASE_DIR + '/results')
+    keyword = Keyword_Analyzer()
+    pdf_dict = pickle_get_content(BASE_DIR + '/headers.pickle')
+    tokenized_vocabulary,tf_idf = keyword.analyze(list(pdf_dict.keys()))
+
+
 
 if __name__ == '__main__':
     main()

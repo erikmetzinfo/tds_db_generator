@@ -8,7 +8,7 @@ from bs4 import BeautifulSoup
 
 from pdf_reader import Pdf_reader, BASE_DIR, EXCLUDE_CHARACTERS
 from general_pkg import string_comparison
-from keyword import Keyword
+
 
 
 # Files
@@ -299,10 +299,6 @@ class Analyze_Text(object):
 
         return pdf_headers
 
-    @staticmethod
-    def get_most_used_items(items_to_search):
-        items_set = set()
-        for item in items_to_search:
 
 
 def get_pickled_pdfs():
@@ -352,8 +348,10 @@ def unpickle_dicts():
 
         a=1
 
-    keyword_analyzer = Keyword()
-    headers = keyword_analyzer.analyze(pdf_headers.keys())
+    pickle_dump_content(BASE_DIR + '/headers.pickle', pdf_headers)
+    # from keyword import Keyword_Analyzer
+    # keyword_analyzer = Keyword_Analyzer()
+    # headers = keyword_analyzer.analyze(pdf_headers.keys())
 
     a=1
 
